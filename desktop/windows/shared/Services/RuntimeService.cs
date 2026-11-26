@@ -463,7 +463,7 @@ public sealed class RuntimeService : IDisposable
         }
     }
 
-    public async Task<string> RunUpdateAsync(
+    public async Task<UpdateRunResult> RunUpdateAsync(
         IProgress<UpdateProgress>? progress,
         CancellationToken cancellationToken = default)
     {
@@ -596,6 +596,69 @@ public sealed class RuntimeService : IDisposable
                 {
                     // Keep the terminal result visible even if best-effort temp cleanup is denied.
                 }
+            }
+        }
+    }
+
+    // 消费完整安装器更新交接标记（update/installer-handoff.json），用于安装器完成升级并拉起新版托盘后展示一次完成提示。
+    internal async Task<string?> ConsumeInstallerUpdateCompletionAsync(
+        CancellationToken cancellationToken = default)
+    {
+        var markerPath = Path.Combine(RuntimeRoot, "update", "installer-handoff.json");
+        if (!File.Exists(markerPath))
+        {
+            return null;
+        }
+
+        var consumedPath = markerPath + $".consumed.{Guid.NewGuid():N}";
+        try
+        {
+            // 先移出固定路径再读取，确保无论成功与否都不会在后续启动里重复弹窗/通知。
+            File.Move(markerPath, consumedPath, overwrite: true);
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+        {
+            return null;
+        }
+
+        try
+        {
+            var marker = await ReadJsonAsync<InstallerUpdateHandoffMarker>(consumedPath, cancellationToken);
+            if (marker is null || marker.SchemaVersion != 1 || string.IsNullOrWhiteSpace(marker.TargetVersion))
+            {
+                return null;
+            }
+
+            var manifest = await ReadRuntimeManifestAsync(cancellationToken) ?? new RuntimeManifest();
+            var binaryPath = ResolveCoreBinaryPath(manifest);
+            var installedVersion = await ReadCoreVersionAsync(binaryPath, cancellationToken);
+            if (!UpdateProgressStreamTracker.ShouldNotifyInstallerUpdateCompletion(
+                    marker.TargetVersion,
+                    marker.CreatedAt,
+                    installedVersion,
+                    DateTimeOffset.UtcNow))
+            {
+                return null;
+            }
+
+            var displayVersion = marker.TargetVersion.Trim();
+            if (!displayVersion.StartsWith('v') && !displayVersion.StartsWith('V'))
+            {
+                displayVersion = "v" + displayVersion;
+            }
+            return UiText.Format("UpdateCompletedVersion", displayVersion);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(consumedPath);
+            }
+            catch (IOException)
+            {
+            }
+            catch (UnauthorizedAccessException)
+            {
             }
         }
     }
@@ -1659,7 +1722,7 @@ public sealed class RuntimeService : IDisposable
             : result.Output + Environment.NewLine + result.Error;
     }
 
-    private static async Task<string> RunUpdateProcessAsync(
+    private static async Task<UpdateRunResult> RunUpdateProcessAsync(
         ProcessStartInfo startInfo,
         IProgress<UpdateProgress>? progress,
         CancellationToken cancellationToken)
@@ -1667,8 +1730,9 @@ public sealed class RuntimeService : IDisposable
         using var process = Process.Start(startInfo) ?? throw new InvalidOperationException(UiText.Format("ProcessStartFailed", startInfo.FileName));
         var output = new StringBuilder();
         var error = new StringBuilder();
-        var outputTask = ReadProcessLinesAsync(process.StandardOutput, output, progress, cancellationToken);
-        var errorTask = ReadProcessLinesAsync(process.StandardError, error, null, cancellationToken);
+        var tracker = new UpdateProgressStreamTracker();
+        var outputTask = ReadProcessLinesAsync(process.StandardOutput, output, progress, tracker, cancellationToken);
+        var errorTask = ReadProcessLinesAsync(process.StandardError, error, null, null, cancellationToken);
 
         await Task.WhenAll(process.WaitForExitAsync(cancellationToken), outputTask, errorTask);
         var outputText = output.ToString().Trim();
@@ -1678,15 +1742,24 @@ public sealed class RuntimeService : IDisposable
             throw new InvalidOperationException(string.IsNullOrWhiteSpace(errorText) ? outputText : errorText);
         }
 
+        var outcome = tracker.ResolveExitZeroOutcome();
+        if (outcome == UpdateRunOutcome.HandedOff)
+        {
+            var handoffMessage = UiText.Get("UpdateInstallerHandedOff");
+            progress?.Report(new UpdateProgress(null, true, handoffMessage));
+            return new UpdateRunResult(UpdateRunOutcome.HandedOff, handoffMessage, tracker.TargetVersion);
+        }
+
         var completedMessage = UiText.Get("UpdateCompleted");
         progress?.Report(new UpdateProgress(100, false, completedMessage));
-        return completedMessage;
+        return new UpdateRunResult(UpdateRunOutcome.Completed, completedMessage, tracker.TargetVersion);
     }
 
     private static async Task ReadProcessLinesAsync(
         StreamReader reader,
         StringBuilder buffer,
         IProgress<UpdateProgress>? progress,
+        UpdateProgressStreamTracker? tracker,
         CancellationToken cancellationToken)
     {
         while (await reader.ReadLineAsync(cancellationToken) is { } line)
@@ -1694,7 +1767,7 @@ public sealed class RuntimeService : IDisposable
             buffer.AppendLine(line);
             if (!string.IsNullOrWhiteSpace(line))
             {
-                var updateProgress = ParseUpdateProgress(line);
+                var updateProgress = ParseUpdateProgress(line, tracker);
                 if (updateProgress is not null)
                 {
                     progress?.Report(updateProgress);
@@ -1703,7 +1776,7 @@ public sealed class RuntimeService : IDisposable
         }
     }
 
-    private static UpdateProgress? ParseUpdateProgress(string line)
+    private static UpdateProgress? ParseUpdateProgress(string line, UpdateProgressStreamTracker? tracker = null)
     {
         UpdateProgressEvent? updateEvent;
         try
@@ -1717,6 +1790,11 @@ public sealed class RuntimeService : IDisposable
         if (updateEvent is null || updateEvent.SchemaVersion != 1)
         {
             return null;
+        }
+        tracker?.Observe(updateEvent);
+        if (string.Equals(updateEvent.Type, "handed_off", StringComparison.Ordinal))
+        {
+            return new UpdateProgress(null, true, UiText.Get("UpdateInstallerHandedOff"));
         }
         if (string.Equals(updateEvent.Type, "completed", StringComparison.Ordinal))
         {

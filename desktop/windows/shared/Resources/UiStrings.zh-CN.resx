@@ -335,6 +335,12 @@
   <data name="UpdateCompleted" xml:space="preserve">
     <value>更新完成。</value>
   </data>
+  <data name="UpdateCompletedVersion" xml:space="preserve">
+    <value>已更新至 {0}。</value>
+  </data>
+  <data name="UpdateInstallerHandedOff" xml:space="preserve">
+    <value>正在启动安装程序并重启…</value>
+  </data>
   <data name="UpdateFailed" xml:space="preserve">
     <value>更新失败。</value>
   </data>

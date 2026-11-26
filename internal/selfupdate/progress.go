@@ -82,3 +82,23 @@ func reportDownloadProgress(
 		TotalBytes:     totalBytes,
 	})
 }
+
+// reportUpdateHandedOff 通知桌面端：当前 updater 进程已将替换与重启工作移交给外部安装器或辅助进程。
+// 桌面 UI 据此保持“正在启动安装程序并重启…”的过渡态，而不是在进程退出码为 0 时误报“更新完成”。
+func reportUpdateHandedOff(
+	reporter updateProgressReporter,
+	currentVersion string,
+	targetVersion string,
+	asset string,
+) {
+	if reporter == nil {
+		return
+	}
+	reporter(UpdateProgressEvent{
+		Type:           "handed_off",
+		Stage:          UpdateStageRestarting,
+		CurrentVersion: normalizeVersion(currentVersion),
+		TargetVersion:  normalizeVersion(targetVersion),
+		Asset:          asset,
+	})
+}

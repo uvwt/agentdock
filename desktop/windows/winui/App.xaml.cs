@@ -294,7 +294,15 @@ public partial class NativeApp : Application
         try
         {
             var transaction = await _runtime.ReadUpdateUiHandoffTransactionAsync();
-            if (transaction is null) return;
+            if (transaction is null)
+            {
+                var completedNotice = await _runtime.ConsumeInstallerUpdateCompletionAsync();
+                if (!string.IsNullOrWhiteSpace(completedNotice))
+                {
+                    _trayIcon?.ShowNotification("AgentDock", completedNotice, TrayNotificationKind.Info);
+                }
+                return;
+            }
             var deadline = DateTimeOffset.UtcNow.AddMinutes(4);
             UpdateTerminalResult? result = null;
             while (DateTimeOffset.UtcNow < deadline)
