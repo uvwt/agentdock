@@ -692,6 +692,45 @@ struct InstallerConfigurationTests {
         let timeout = await checker.check(publicMCPURL: publicMCPURL)
         precondition(!timeout.isReachable)
         precondition(timeout.message == L10n.text("Public access timed out"))
+
+        precondition(
+            !TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                isInsidePopoverWindow: true,
+                isInsideAnchorWindow: false
+            )
+        )
+        precondition(
+            !TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                isInsidePopoverWindow: false,
+                isInsideAnchorWindow: true
+            )
+        )
+        precondition(
+            TrayPopoverDismissPolicy.shouldDismissForMouseEvent(
+                isInsidePopoverWindow: false,
+                isInsideAnchorWindow: false
+            )
+        )
+        precondition(TrayPopoverDismissPolicy.shouldDismissForKeyDown(keyCode: 53))
+        precondition(!TrayPopoverDismissPolicy.shouldDismissForKeyDown(keyCode: 36))
+        precondition(
+            !TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+                lastDismissedAt: nil,
+                now: 100.0
+            )
+        )
+        precondition(
+            TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+                lastDismissedAt: 100.0,
+                now: 100.12
+            )
+        )
+        precondition(
+            !TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(
+                lastDismissedAt: 100.0,
+                now: 100.30
+            )
+        )
     }
 
     private static func expectFailure(_ message: String, _ operation: () throws -> Void) {

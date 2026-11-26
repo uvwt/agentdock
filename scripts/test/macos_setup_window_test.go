@@ -143,3 +143,48 @@ func TestMacOSPublicEndpointCheckInvalidatesAcrossLifecycleChanges(t *testing.T)
 		}
 	}
 }
+
+func TestMacOSTrayPopoverDismissesOnExternalInteraction(t *testing.T) {
+	root := filepath.Join("..", "..", "desktop", "macos", "AgentDockApp", "Sources")
+	popoverData, err := os.ReadFile(filepath.Join(root, "TrayPopoverController.swift"))
+	if err != nil {
+		t.Fatalf("read TrayPopoverController.swift: %v", err)
+	}
+	popover := string(popoverData)
+	for _, want := range []string{
+		"final class TrayPopoverController: NSObject, NSPopoverDelegate",
+		"popover.delegate = self",
+		"func popoverWillShow(_ notification: Notification)",
+		"func popoverDidShow(_ notification: Notification)",
+		"func popoverDidClose(_ notification: Notification)",
+		"NSEvent.addGlobalMonitorForEvents(",
+		"NSEvent.addLocalMonitorForEvents(",
+		"NSApplication.didResignActiveNotification",
+		"NSWindow.didResignKeyNotification",
+		"TrayPopoverDismissPolicy.shouldSuppressToggleAfterExternalDismiss(",
+		"TrayPopoverDismissPolicy.shouldDismissForMouseEvent(",
+		"TrayPopoverDismissPolicy.shouldDismissForKeyDown(",
+		"popoverWindow.makeKey()",
+		"teardownDismissMonitors()",
+	} {
+		if !strings.Contains(popover, want) {
+			t.Fatalf("macOS tray popover missing external dismiss contract %q", want)
+		}
+	}
+
+	policyData, err := os.ReadFile(filepath.Join(root, "TrayPopoverDismissPolicy.swift"))
+	if err != nil {
+		t.Fatalf("read TrayPopoverDismissPolicy.swift: %v", err)
+	}
+	policy := string(policyData)
+	for _, want := range []string{
+		"enum TrayPopoverDismissPolicy",
+		"shouldSuppressToggleAfterExternalDismiss(",
+		"shouldDismissForMouseEvent(",
+		"shouldDismissForKeyDown(",
+	} {
+		if !strings.Contains(policy, want) {
+			t.Fatalf("macOS tray popover policy missing %q", want)
+		}
+	}
+}

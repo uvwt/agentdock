@@ -54,6 +54,7 @@ swiftc \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/TunnelTokenStore.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/PublicEndpointChecker.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/ServicePortValidation.swift" \
+  "$ROOT_DIR/desktop/macos/AgentDockApp/Sources/TrayPopoverDismissPolicy.swift" \
   "$ROOT_DIR/desktop/macos/AgentDockApp/Tests/InstallerConfigurationTests.swift" \
   -o "$TMP_ROOT/installer-configuration-tests"
 "$TMP_ROOT/installer-configuration-tests"
