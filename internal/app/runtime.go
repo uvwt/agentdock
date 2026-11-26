@@ -12,7 +12,6 @@ import (
 	acpruntime "github.com/uvwt/agentdock/internal/acp"
 	"github.com/uvwt/agentdock/internal/config"
 	"github.com/uvwt/agentdock/internal/envstore"
-	"github.com/uvwt/agentdock/internal/evolution"
 	mcpclient "github.com/uvwt/agentdock/internal/mcp/client"
 	"github.com/uvwt/agentdock/internal/observability"
 	pluginruntime "github.com/uvwt/agentdock/internal/plugin"
@@ -48,7 +47,6 @@ type Runtime struct {
 	media          *toolmedia.Service
 	browser        *toolbrowser.Service
 	recall         *toolrecall.Service
-	evolution      *evolution.Service
 	taskTools      *tooltask.Service
 	acp            *toolacp.Service
 	observer       *observability.Recorder
@@ -157,8 +155,7 @@ func NewRuntime(cfg config.Config) (*Runtime, error) {
 		runtime.media.PublishBrowserScreenshot,
 	)
 	runtime.recall = toolrecall.New(func() config.Config { return runtime.cfg })
-	runtime.evolution = evolution.New(func() config.Config { return runtime.cfg }, tasks)
-	runtime.taskTools = tooltask.New(func() config.Config { return runtime.cfg }, tasks, runtime.evolution)
+	runtime.taskTools = tooltask.New(func() config.Config { return runtime.cfg }, tasks)
 	runtime.tracing = observability.NewTracing(nil)
 
 	if cfg.ACPEnabled {

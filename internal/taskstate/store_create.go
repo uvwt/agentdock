@@ -11,7 +11,7 @@ func (s *Store) Create(title, goal string, conditionTexts []string, steps []Task
 	return s.CreateWithContext(title, goal, "", "", conditionTexts, steps, sourceTemplates)
 }
 
-func (s *Store) CreateWithContext(title, goal, project, device string, conditionTexts []string, steps []TaskStepInput, sourceTemplates []TemplateReference, initialBindings ...EvolutionBinding) (Task, error) {
+func (s *Store) CreateWithContext(title, goal, project, device string, conditionTexts []string, steps []TaskStepInput, sourceTemplates []TemplateReference) (Task, error) {
 	release, err := s.acquireStoreLock()
 	if err != nil {
 		return Task{}, err
@@ -56,23 +56,6 @@ func (s *Store) CreateWithContext(title, goal, project, device string, condition
 	if err != nil {
 		return Task{}, err
 	}
-	bindings := make([]EvolutionBinding, 0, len(initialBindings))
-	seenBindings := make(map[string]EvolutionBinding, len(initialBindings))
-	for _, binding := range initialBindings {
-		binding, err = normalizeEvolutionBinding(binding)
-		if err != nil {
-			return Task{}, err
-		}
-		if existing, ok := seenBindings[binding.EvolutionID]; ok {
-			if existing.OnSuccess == binding.OnSuccess && existing.OnFailure == binding.OnFailure {
-				continue
-			}
-			return Task{}, errors.New("evolution is already bound with different learning check semantics")
-		}
-		binding.BoundAt = now
-		seenBindings[binding.EvolutionID] = binding
-		bindings = append(bindings, binding)
-	}
 	id, err := newID()
 	if err != nil {
 		return Task{}, err
@@ -82,21 +65,20 @@ func (s *Store) CreateWithContext(title, goal, project, device string, condition
 		phase = taskSteps[0].Phase
 	}
 	task := Task{
-		SchemaVersion:     SchemaVersion,
-		ID:                id,
-		Title:             title,
-		Goal:              goal,
-		Project:           project,
-		Device:            device,
-		Status:            StatusActive,
-		Phase:             phase,
-		Conditions:        make([]Condition, 0, len(conditionTexts)),
-		SourceTemplates:   templateRefs,
-		Steps:             taskSteps,
-		EvolutionBindings: bindings,
-		Events:            []Event{{Type: "created", Summary: "task created", CreatedAt: now}},
-		CreatedAt:         now,
-		UpdatedAt:         now,
+		SchemaVersion:   SchemaVersion,
+		ID:              id,
+		Title:           title,
+		Goal:            goal,
+		Project:         project,
+		Device:          device,
+		Status:          StatusActive,
+		Phase:           phase,
+		Conditions:      make([]Condition, 0, len(conditionTexts)),
+		SourceTemplates: templateRefs,
+		Steps:           taskSteps,
+		Events:          []Event{{Type: "created", Summary: "task created", CreatedAt: now}},
+		CreatedAt:       now,
+		UpdatedAt:       now,
 	}
 	if len(templateRefs) > 0 {
 		ids := make([]string, 0, len(templateRefs))

@@ -146,9 +146,16 @@ func TestToolDescriptorsUseConfigAwareTaskManageSchema(t *testing.T) {
 	if _, ok := withoutProps["template_id"]; ok {
 		t.Fatal("task_manage descriptor should hide Nexus-only fields without Nexus")
 	}
+	if _, ok := withoutProps["learning_checks"]; ok {
+		t.Fatal("task_manage descriptor must not expose learning_checks")
+	}
 	withoutOutputProps := withoutNexus["outputSchema"].(map[string]any)["properties"].(map[string]any)
 	if _, ok := withoutOutputProps["guidance_context"]; ok {
-		t.Fatal("task_manage descriptor should hide Nexus-only output fields without Nexus")
+		t.Fatal("task_manage descriptor must not expose guidance_context")
+	}
+	withoutNextAction, _ := withoutOutputProps["next_required_action"].(map[string]any)["description"].(string)
+	if strings.Contains(withoutNextAction, "template composition") {
+		t.Fatalf("task_manage descriptor should hide template composition hint without Nexus: %q", withoutNextAction)
 	}
 
 	withNexus := toolDescriptorsForConfig(t, []string{"task_manage"}, config.Config{NexusEndpoint: "http://127.0.0.1:18777"})[0]
@@ -156,9 +163,18 @@ func TestToolDescriptorsUseConfigAwareTaskManageSchema(t *testing.T) {
 	if _, ok := withProps["template_id"]; !ok {
 		t.Fatal("task_manage descriptor should expose Nexus fields with Nexus")
 	}
+	if _, ok := withProps["learning_checks"]; ok {
+		t.Fatal("task_manage descriptor must not expose removed learning_checks with Nexus")
+	}
 	withOutputProps := withNexus["outputSchema"].(map[string]any)["properties"].(map[string]any)
-	if _, ok := withOutputProps["guidance_context"]; !ok {
-		t.Fatal("task_manage descriptor should expose Nexus output fields with Nexus")
+	for _, removed := range []string{"guidance_context", "review_revision", "evolution_candidates", "evolution_warning"} {
+		if _, ok := withOutputProps[removed]; ok {
+			t.Fatalf("task_manage descriptor must not expose removed evolution field %s with Nexus", removed)
+		}
+	}
+	withNextAction, _ := withOutputProps["next_required_action"].(map[string]any)["description"].(string)
+	if !strings.Contains(withNextAction, "template composition") {
+		t.Fatalf("task_manage descriptor should expose template composition hint with Nexus: %q", withNextAction)
 	}
 }
 

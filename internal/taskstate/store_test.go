@@ -573,3 +573,73 @@ func TestBatchCheckpointUsesTaskStateLimits(t *testing.T) {
 		t.Fatalf("oversized batch changed task: %#v", loaded)
 	}
 }
+
+func TestLoadLegacyTaskJSONIgnoresRemovedEvolutionFields(t *testing.T) {
+	store, err := New(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	legacyID := "tsk_0123456789abc001"
+	legacyJSON := `{
+  "schema_version": 1,
+  "id": "tsk_0123456789abc001",
+  "title": "Legacy task with evolution fields",
+  "goal": "ensure old disk state remains readable",
+  "project": "agentdock",
+  "device": "tianyi",
+  "status": "active",
+  "phase": "execute",
+  "conditions": [{"id": "cond_01", "text": "readable", "created_at": "2026-08-15T10:00:00Z"}],
+  "source_templates": [{"id": "tpl_1", "version": "1", "hash": "abc", "source_evolution_id": "evo_legacy"}],
+  "steps": [{"id": "work", "title": "Work", "phase": "execute", "status": "completed", "updated_at": "2026-08-15T10:01:00Z"}],
+  "events": [{"type": "created", "summary": "task created", "created_at": "2026-08-15T10:00:00Z"}],
+  "guidance_context": [{"evolution_id": "evo_1", "type": "runbook", "statement": "old guidance", "status": "active"}],
+  "evolution_guidance_seen": ["evo_1"],
+  "evolution_candidates": [{"evolution_id": "evo_2", "type": "preference", "statement": "old candidate", "status": "provisional", "review_revision": "rev_old"}],
+  "evolution_bindings": [{"evolution_id": "evo_3", "on_success": "support", "on_failure": "none", "bound_at": "2026-08-15T10:00:00Z"}],
+  "final_review": {
+    "status": "failed",
+    "summary": "needs retry",
+    "open_risks": ["pending verification"],
+    "review_revision": "rev_old",
+    "reviewed_at": "2026-08-15T10:02:00Z"
+  },
+  "created_at": "2026-08-15T10:00:00Z",
+  "updated_at": "2026-08-15T10:02:00Z"
+}
+`
+	if err := os.WriteFile(filepath.Join(store.Root(), legacyID+".json"), []byte(legacyJSON), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	loaded, err := store.Get(legacyID)
+	if err != nil {
+		t.Fatalf("Get() failed on legacy task JSON: %v", err)
+	}
+	if loaded.ID != legacyID || loaded.Project != "agentdock" || len(loaded.SourceTemplates) != 1 || loaded.SourceTemplates[0].ID != "tpl_1" {
+		t.Fatalf("unexpected decoded legacy task: %#v", loaded)
+	}
+	if loaded.FinalReview == nil || loaded.FinalReview.Status != FinalReviewFailed {
+		t.Fatalf("unexpected decoded final review: %#v", loaded.FinalReview)
+	}
+
+	listed, err := store.List("", 50)
+	if err != nil {
+		t.Fatalf("List() failed on legacy task JSON: %v", err)
+	}
+	if len(listed) != 1 || listed[0].ID != legacyID {
+		t.Fatalf("List() = %#v, want legacy task", listed)
+	}
+
+	reviewed, err := store.FinalReview(legacyID, FinalReviewInput{
+		Status:        FinalReviewPass,
+		Summary:       "verified after cleanup",
+		VerifiedFacts: []string{"legacy task loaded and reviewed"},
+	})
+	if err != nil {
+		t.Fatalf("FinalReview() failed on legacy task: %v", err)
+	}
+	if reviewed.Phase != PhaseCloseout {
+		t.Fatalf("phase = %s, want %s", reviewed.Phase, PhaseCloseout)
+	}
+}
