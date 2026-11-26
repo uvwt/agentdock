@@ -22,13 +22,12 @@ type windowsNativeChildReady struct {
 }
 
 func TestWindowsPowerShellOutputIsUTF8(t *testing.T) {
-	s, _, err := Start(
+	s, err := Start(
 		context.Background(),
 		"[Console]::Out.Write('中文输出')",
 		t.TempDir(),
 		os.Environ(),
 		5*time.Second,
-		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -45,14 +44,13 @@ func TestWindowsPowerShellOutputIsUTF8(t *testing.T) {
 }
 
 func TestWindowsTTYUsesConPTYAndAcceptsInput(t *testing.T) {
-	s, _, err := StartWithTTY(
+	s, err := StartWithTTY(
 		context.Background(),
 		"$line=[Console]::In.ReadLine(); [Console]::Out.Write(\"received:$line\")",
 		t.TempDir(),
 		os.Environ(),
 		10*time.Second,
 		true,
-		nil,
 	)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +87,7 @@ func TestWindowsKillTerminatesPowerShellNativeChildTree(t *testing.T) {
 	command := fmt.Sprintf("& '%s' '-test.run=^TestWindowsNativeChildHelper$'", strings.ReplaceAll(testBinary, "'", "''"))
 	childEnv := append(os.Environ(), windowsNativeChildReadyEnv+"="+readyPath)
 
-	s, _, err := Start(context.Background(), command, root, childEnv, time.Minute, nil)
+	s, err := Start(context.Background(), command, root, childEnv, time.Minute)
 	if err != nil {
 		t.Fatal(err)
 	}
